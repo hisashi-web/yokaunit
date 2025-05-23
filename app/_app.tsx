@@ -8,13 +8,12 @@ function MyApp({ Component, pageProps }) {
   const router = useRouter()
 
   useEffect(() => {
-    const handleRouteChange = (url) => {
-      // アナリティクスにページ遷移を送信
-      window.gtag?.("config", "G-S0XFNHDJQS", {
-        page_path: url,
-      })
-
-      // ページ遷移時にトップにスクロール
+    const handleRouteChange = (url: string) => {
+      if (typeof window.gtag === "function") {
+        window.gtag("config", "G-S0XFNHDJQS", {
+          page_path: url,
+        })
+      }
       window.scrollTo(0, 0)
     }
 
@@ -39,7 +38,7 @@ function MyApp({ Component, pageProps }) {
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-            gtag('config', 'G-S0XFNHDJQS');
+            gtag('config', 'G-S0XFNHDJQS', { page_path: window.location.pathname });
           `,
         }}
       />

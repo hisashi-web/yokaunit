@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://yokaunit.com
+
+# Sitemaps
+Sitemap: https://yokaunit.com/sitemap.xml

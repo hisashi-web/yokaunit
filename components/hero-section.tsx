@@ -36,7 +36,7 @@ export function HeroSection() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            SEO対策済みの便利なWebツールを多数公開中。
+            無料で便利なWebツールを多数公開中。
             <br className="hidden sm:block" />
             あなたの「あったらいいな」も実現します。
           </motion.p>

@@ -30,7 +30,6 @@ interface AuthContextType {
   isDeveloper: boolean
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
-  ensureProfileExists: (userId: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -58,53 +57,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const ensureProfileExists = async (userId: string) => {
-    try {
-      // プロフィールを取得
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .single()
-
-      // プロフィールが存在しない場合は作成
-      if (fetchError && fetchError.code === "PGRST116") {
-        const { data: userData } = await supabase.auth.getUser(userId)
-
-        if (!userData.user) {
-          console.error("User not found")
-          return
-        }
-
-        const { error: insertError } = await supabase.from("profiles").insert({
-          id: userId,
-          email: userData.user.email,
-          username:
-            userData.user.user_metadata?.name ||
-            userData.user.user_metadata?.full_name ||
-            userData.user.email?.split("@")[0] ||
-            "ユーザー",
-          full_name: userData.user.user_metadata?.name || userData.user.user_metadata?.full_name || null,
-          avatar_url: userData.user.user_metadata?.avatar_url || null,
-          role: "basic",
-          is_active: true,
-        })
-
-        if (insertError) {
-          console.error("Error creating profile:", insertError)
-          return
-        }
-
-        console.log("Profile created successfully")
-      }
-
-      // プロフィールを再取得
-      await refreshProfile()
-    } catch (error) {
-      console.error("Error ensuring profile exists:", error)
-    }
-  }
-
   const refreshProfile = async () => {
     if (user) {
       const profileData = await fetchProfile(user.id)
@@ -121,18 +73,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true)
 
       try {
+        // 現在のセッションを取得
         const {
           data: { session },
         } = await supabase.auth.getSession()
+
+        console.log("Current session:", session ? "exists" : "none")
 
         if (!mounted) return
 
         setUser(session?.user ?? null)
 
         if (session?.user) {
-          // プロフィールが存在することを確認
-          await ensureProfileExists(session.user.id)
-
+          console.log("Loading profile for user:", session.user.email)
           const profileData = await fetchProfile(session.user.id)
           if (mounted) {
             setProfile(profileData)
@@ -149,34 +102,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth()
 
-    // Listen for auth changes
+    // 認証状態の変更を監視
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      console.log("Auth state changed:", event)
+      console.log("🔄 Auth state changed:", event)
 
       if (event === "SIGNED_OUT") {
+        console.log("User signed out")
         setUser(null)
         setProfile(null)
-        // ログアウト時にホームページにリダイレクト
-        window.location.href = "/"
         return
       }
 
-      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        if (session?.user) {
-          setUser(session.user)
+      if (event === "SIGNED_IN" && session?.user) {
+        console.log("✅ User signed in:", session.user.email)
+        setUser(session.user)
 
-          // プロフィールが存在することを確認
-          await ensureProfileExists(session.user.id)
-
-          const profileData = await fetchProfile(session.user.id)
-          if (mounted) {
-            setProfile(profileData)
-          }
+        // プロフィールを取得
+        const profileData = await fetchProfile(session.user.id)
+        if (mounted) {
+          setProfile(profileData)
         }
+
+        // ユーザー情報をコンソールに表示
+        console.log("👤 User Profile:", {
+          id: session.user.id,
+          email: session.user.email,
+          username: profileData?.username,
+          fullName: profileData?.full_name,
+          role: profileData?.role,
+        })
+      }
+
+      if (event === "TOKEN_REFRESHED") {
+        console.log("🔄 Token refreshed")
       }
     })
 
@@ -188,8 +150,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      console.log("🚪 Signing out...")
       setIsLoading(true)
+
       const { error } = await supabase.auth.signOut()
+
       if (error) {
         console.error("Sign out error:", error)
         toast({
@@ -198,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           variant: "destructive",
         })
       } else {
-        // 強制的にステートをクリア
+        console.log("✅ Signed out successfully")
         setUser(null)
         setProfile(null)
 
@@ -207,7 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           description: "ログアウトしました。",
         })
 
-        // ホームページにリダイレクト
+        // ホームページにリダイレクト（ハッシュを避ける）
         window.location.href = "/"
       }
     } catch (error) {
@@ -225,7 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isLoggedIn = !!user
   const isPremium = profile?.role === "premium" || profile?.role === "admin"
   const isAdmin = profile?.role === "admin"
-  const isDeveloper = false // 開発者モードは別途設定
+  const isDeveloper = false
 
   return (
     <AuthContext.Provider
@@ -239,7 +204,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDeveloper,
         signOut,
         refreshProfile,
-        ensureProfileExists,
       }}
     >
       {children}

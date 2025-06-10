@@ -4,6 +4,7 @@ import { useState, useEffect, createContext, useContext, type ReactNode } from "
 import { supabase } from "@/lib/supabase"
 import type { User } from "@supabase/supabase-js"
 import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
 
 interface Profile {
   id: string
@@ -29,6 +30,7 @@ interface AuthContextType {
   isDeveloper: boolean
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  ensureProfileExists: (userId: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -38,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const { toast } = useToast()
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
@@ -52,6 +55,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Error fetching profile:", error)
       return null
+    }
+  }
+
+  const ensureProfileExists = async (userId: string) => {
+    try {
+      // プロフィールを取得
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single()
+
+      // プロフィールが存在しない場合は作成
+      if (fetchError && fetchError.code === "PGRST116") {
+        const { data: userData } = await supabase.auth.getUser(userId)
+
+        if (!userData.user) {
+          console.error("User not found")
+          return
+        }
+
+        const { error: insertError } = await supabase.from("profiles").insert({
+          id: userId,
+          email: userData.user.email,
+          username:
+            userData.user.user_metadata?.name ||
+            userData.user.user_metadata?.full_name ||
+            userData.user.email?.split("@")[0] ||
+            "ユーザー",
+          full_name: userData.user.user_metadata?.name || userData.user.user_metadata?.full_name || null,
+          avatar_url: userData.user.user_metadata?.avatar_url || null,
+          role: "basic",
+          is_active: true,
+        })
+
+        if (insertError) {
+          console.error("Error creating profile:", insertError)
+          return
+        }
+
+        console.log("Profile created successfully")
+      }
+
+      // プロフィールを再取得
+      await refreshProfile()
+    } catch (error) {
+      console.error("Error ensuring profile exists:", error)
     }
   }
 
@@ -80,6 +130,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null)
 
         if (session?.user) {
+          // プロフィールが存在することを確認
+          await ensureProfileExists(session.user.id)
+
           const profileData = await fetchProfile(session.user.id)
           if (mounted) {
             setProfile(profileData)
@@ -102,24 +155,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
+      console.log("Auth state changed:", event)
+
       if (event === "SIGNED_OUT") {
         setUser(null)
         setProfile(null)
         // ログアウト時にホームページにリダイレクト
-        router.push("/")
+        window.location.href = "/"
         return
       }
 
-      setUser(session?.user ?? null)
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        if (session?.user) {
+          setUser(session.user)
 
-      if (session?.user) {
-        const profileData = await fetchProfile(session.user.id)
-        if (mounted) {
-          setProfile(profileData)
-        }
-      } else {
-        if (mounted) {
-          setProfile(null)
+          // プロフィールが存在することを確認
+          await ensureProfileExists(session.user.id)
+
+          const profileData = await fetchProfile(session.user.id)
+          if (mounted) {
+            setProfile(profileData)
+          }
         }
       }
     })
@@ -128,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [router])
+  }, [])
 
   const signOut = async () => {
     try {
@@ -136,16 +192,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signOut()
       if (error) {
         console.error("Sign out error:", error)
+        toast({
+          title: "エラー",
+          description: "ログアウトに失敗しました。",
+          variant: "destructive",
+        })
+      } else {
+        // 強制的にステートをクリア
+        setUser(null)
+        setProfile(null)
+
+        toast({
+          title: "ログアウト",
+          description: "ログアウトしました。",
+        })
+
+        // ホームページにリダイレクト
+        window.location.href = "/"
       }
-
-      // 強制的にステートをクリア
-      setUser(null)
-      setProfile(null)
-
-      // ホームページにリダイレクト
-      window.location.href = "/"
     } catch (error) {
       console.error("Sign out error:", error)
+      toast({
+        title: "エラー",
+        description: "ログアウトに失敗しました。",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -168,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isDeveloper,
         signOut,
         refreshProfile,
+        ensureProfileExists,
       }}
     >
       {children}

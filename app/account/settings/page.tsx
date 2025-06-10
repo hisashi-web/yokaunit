@@ -28,24 +28,37 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const router = useRouter()
-  const { isLoggedIn, profile, isPremium, refreshProfile } = useAuth()
+  const { isLoggedIn, user, profile, isPremium, refreshProfile, ensureProfileExists } = useAuth()
   const { toast } = useToast()
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      router.push("/login")
-      return
+    const checkAuth = async () => {
+      setIsLoading(true)
+
+      if (!isLoggedIn || !user) {
+        router.push("/login")
+        return
+      }
+
+      // プロフィールが存在することを確認
+      if (user && !profile) {
+        await ensureProfileExists(user.id)
+      }
+
+      if (profile) {
+        setFormData({
+          username: profile.username || "",
+          full_name: profile.full_name || "",
+          phone_number: profile.phone_number || "",
+          birth_date: profile.birth_date || "",
+        })
+      }
+
+      setIsLoading(false)
     }
 
-    if (profile) {
-      setFormData({
-        username: profile.username || "",
-        full_name: profile.full_name || "",
-        phone_number: profile.phone_number || "",
-        birth_date: profile.birth_date || "",
-      })
-    }
-  }, [isLoggedIn, profile, router])
+    checkAuth()
+  }, [isLoggedIn, user, profile, router, ensureProfileExists])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -57,19 +70,26 @@ export default function SettingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!profile) return
+    if (!user) return
 
     setIsSaving(true)
 
     try {
+      console.log("Saving profile data:", formData)
+
       // ユーザー名の重複チェック
-      if (formData.username !== profile.username) {
-        const { data: existingUser } = await supabase
+      if (formData.username !== profile?.username) {
+        const { data: existingUser, error: checkError } = await supabase
           .from("profiles")
           .select("id")
           .eq("username", formData.username)
-          .neq("id", profile.id)
-          .single()
+          .neq("id", user.id)
+          .maybeSingle()
+
+        if (checkError) {
+          console.error("Error checking username:", checkError)
+          throw new Error("ユーザー名の確認中にエラーが発生しました")
+        }
 
         if (existingUser) {
           toast({
@@ -77,6 +97,7 @@ export default function SettingsPage() {
             description: "このユーザー名は既に使用されています。",
             variant: "destructive",
           })
+          setIsSaving(false)
           return
         }
       }
@@ -91,9 +112,10 @@ export default function SettingsPage() {
           birth_date: formData.birth_date,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", profile.id)
+        .eq("id", user.id)
 
       if (error) {
+        console.error("Error updating profile:", error)
         throw error
       }
 
@@ -116,12 +138,30 @@ export default function SettingsPage() {
     }
   }
 
-  if (!isLoggedIn) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="flex-1 flex items-center justify-center">
-          <p>読み込み中...</p>
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+            <p>読み込み中...</p>
+          </div>
+        </main>
+        <SiteFooter />
+      </div>
+    )
+  }
+
+  if (!isLoggedIn || !user) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="mb-4">この機能を利用するにはログインが必要です。</p>
+            <Button onClick={() => router.push("/login")}>ログイン</Button>
+          </div>
         </main>
         <SiteFooter />
       </div>

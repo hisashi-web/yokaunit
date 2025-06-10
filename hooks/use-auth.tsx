@@ -68,20 +68,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // URLのハッシュをクリーンアップする関数
-  const cleanupUrl = () => {
-    if (typeof window !== "undefined" && window.location.hash) {
-      console.log("🧹 Cleaning up URL hash")
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
-    }
-  }
-
   useEffect(() => {
     let mounted = true
 
     const initializeAuth = async () => {
       try {
         console.log("🚀 Initializing authentication...")
+        setIsLoading(true)
 
         // 現在のセッションを取得
         const {
@@ -91,7 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (sessionError) {
           console.error("❌ Error getting session:", sessionError)
-          setIsLoading(false)
           return
         }
 
@@ -105,9 +97,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (mounted) {
             setProfile(profileData)
           }
-
-          // URLをクリーンアップ
-          cleanupUrl()
         } else {
           console.log("ℹ️ No active session found")
         }
@@ -152,9 +141,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: profileData?.role,
             })
 
-            // URLをクリーンアップ
-            cleanupUrl()
-
             toast({
               title: "ログイン成功",
               description: `${profileData?.username || "ユーザー"}さん、おかえりなさい！`,
@@ -167,14 +153,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(null)
           setUser(null)
           setProfile(null)
-          cleanupUrl()
           break
 
         case "TOKEN_REFRESHED":
           console.log("🔄 Token refreshed")
           if (newSession) {
             setSession(newSession)
-            setUser(newSession.user)
           }
           break
 

@@ -2,87 +2,84 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get("code")
-  const next = searchParams.get("next") ?? "/"
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get("code")
+  const next = requestUrl.searchParams.get("next") ?? "/"
+  const origin = requestUrl.origin
 
-  console.log("🔄 Auth callback triggered")
-  console.log("Code present:", !!code)
-  console.log("Next URL:", next)
+  console.log("🔄 Auth callback triggered", { hasCode: !!code, next })
 
-  if (code) {
-    try {
-      const supabase = createServerSupabaseClient()
-
-      // PKCEフローでコードをセッションに交換
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-      if (error) {
-        console.error("❌ Error exchanging code for session:", error)
-        return NextResponse.redirect(`${origin}/login?error=auth_error`)
-      }
-
-      if (data.user) {
-        console.log("✅ User authenticated:", data.user.email)
-
-        // プロフィールの確認・作成
-        const { data: existingProfile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
-
-        if (!existingProfile) {
-          console.log("📝 Creating new profile...")
-
-          const { error: profileError } = await supabase.from("profiles").insert({
-            id: data.user.id,
-            email: data.user.email,
-            username:
-              data.user.user_metadata?.name ||
-              data.user.user_metadata?.full_name ||
-              data.user.email?.split("@")[0] ||
-              "ユーザー",
-            full_name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || null,
-            avatar_url: data.user.user_metadata?.avatar_url || null,
-            role: "basic",
-            is_active: true,
-          })
-
-          if (profileError) {
-            console.error("❌ Error creating profile:", profileError)
-          } else {
-            console.log("✅ Profile created successfully")
-          }
-        } else {
-          console.log("✅ Profile already exists")
-        }
-
-        // セッション情報をクッキーに設定してホームページにリダイレクト
-        const response = NextResponse.redirect(`${origin}${next}`)
-
-        // セッション情報をクッキーに保存（Supabaseが自動で行うが、明示的に設定）
-        if (data.session) {
-          response.cookies.set("sb-access-token", data.session.access_token, {
-            path: "/",
-            httpOnly: false,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: data.session.expires_in,
-          })
-
-          response.cookies.set("sb-refresh-token", data.session.refresh_token, {
-            path: "/",
-            httpOnly: false,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 30, // 30日
-          })
-        }
-
-        return response
-      }
-    } catch (error) {
-      console.error("❌ Unexpected error in auth callback:", error)
-    }
+  if (!code) {
+    console.error("❌ No authorization code provided")
+    return NextResponse.redirect(`${origin}/login?error=no_code`)
   }
 
-  console.log("❌ No code provided or authentication failed")
-  return NextResponse.redirect(`${origin}/login?error=no_code`)
+  try {
+    const supabase = createServerSupabaseClient()
+
+    // コードをセッションに交換
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (error) {
+      console.error("❌ Error exchanging code for session:", error)
+      return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`)
+    }
+
+    if (!data.session || !data.user) {
+      console.error("❌ No session or user returned")
+      return NextResponse.redirect(`${origin}/login?error=no_session`)
+    }
+
+    console.log("✅ Authentication successful for:", data.user.email)
+
+    // プロフィールの確認・作成
+    const { data: existingProfile, error: profileError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", data.user.id)
+      .single()
+
+    if (profileError && profileError.code === "PGRST116") {
+      console.log("📝 Creating new profile for user:", data.user.email)
+
+      // プロフィールが存在しない場合は作成
+      const { error: insertError } = await supabase.from("profiles").insert({
+        id: data.user.id,
+        email: data.user.email,
+        username:
+          data.user.user_metadata?.name ||
+          data.user.user_metadata?.full_name ||
+          data.user.email?.split("@")[0] ||
+          "ユーザー",
+        full_name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || null,
+        avatar_url: data.user.user_metadata?.avatar_url || null,
+        role: "basic",
+        is_active: true,
+      })
+
+      if (insertError) {
+        console.error("❌ Error creating profile:", insertError)
+      } else {
+        console.log("✅ Profile created successfully")
+      }
+    } else if (!profileError) {
+      console.log("✅ Profile already exists for:", existingProfile?.username)
+    }
+
+    // セッション情報をクッキーに設定してリダイレクト
+    const response = NextResponse.redirect(`${origin}${next}`)
+
+    // セッション情報をクッキーに保存（Supabaseが自動で行うが、明示的に設定）
+    response.cookies.set("sb-auth-token", JSON.stringify(data.session), {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // 1週間
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    })
+
+    return response
+  } catch (error) {
+    console.error("❌ Unexpected error in auth callback:", error)
+    return NextResponse.redirect(`${origin}/login?error=server_error`)
+  }
 }

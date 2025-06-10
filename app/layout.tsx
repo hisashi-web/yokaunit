@@ -5,6 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/hooks/use-auth"
 import { Toaster } from "@/components/ui/toaster"
+import { AuthHandler } from "@/components/auth/auth-handler"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -68,7 +69,6 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   manifest: "/site.webmanifest",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -81,6 +81,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+            <AuthHandler />
             {children}
             <Toaster />
           </ThemeProvider>

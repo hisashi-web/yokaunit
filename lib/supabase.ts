@@ -11,10 +11,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // クライアントサイド用のSupabaseクライアント
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true, // これが重要：URLからセッション情報を自動検出
+    persistSession: true, // ブラウザストレージにセッションを保存
+    autoRefreshToken: true, // トークンの自動更新
+    detectSessionInUrl: false, // 自動検出を無効化（手動で処理）
     flowType: "pkce", // PKCEフローを使用
+    storage: {
+      getItem: (key) => {
+        if (typeof window === "undefined") return null
+        return window.localStorage.getItem(key)
+      },
+      setItem: (key, value) => {
+        if (typeof window === "undefined") return
+        window.localStorage.setItem(key, value)
+      },
+      removeItem: (key) => {
+        if (typeof window === "undefined") return
+        window.localStorage.removeItem(key)
+      },
+    },
   },
 })
 
@@ -23,7 +37,6 @@ export const createServerSupabaseClient = () => {
   return createClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
-      autoRefreshToken: false,
     },
   })
 }

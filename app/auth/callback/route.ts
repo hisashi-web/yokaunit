@@ -1,33 +1,37 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
+  const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get("code")
   const next = searchParams.get("next") ?? "/"
 
-  console.log("Auth callback triggered with code:", code ? "present" : "not present")
+  console.log("🔄 Auth callback triggered")
+  console.log("Code present:", !!code)
+  console.log("Next URL:", next)
 
   if (code) {
     try {
-      // コードをセッションに交換
+      const supabase = createServerSupabaseClient()
+
+      // PKCEフローでコードをセッションに交換
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
-      if (!error && data.user) {
-        console.log("User authenticated successfully:", data.user.email)
+      if (error) {
+        console.error("❌ Error exchanging code for session:", error)
+        return NextResponse.redirect(`${origin}/login?error=auth_error`)
+      }
 
-        // プロフィール情報を確認・作成
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", data.user.id)
-          .single()
+      if (data.user) {
+        console.log("✅ User authenticated:", data.user.email)
 
-        if (profileError && profileError.code === "PGRST116") {
-          // プロフィールが存在しない場合は作成
-          console.log("Creating new profile for user:", data.user.email)
+        // プロフィールの確認・作成
+        const { data: existingProfile } = await supabase.from("profiles").select("*").eq("id", data.user.id).single()
 
-          const { error: insertError } = await supabase.from("profiles").insert({
+        if (!existingProfile) {
+          console.log("📝 Creating new profile...")
+
+          const { error: profileError } = await supabase.from("profiles").insert({
             id: data.user.id,
             email: data.user.email,
             username:
@@ -41,26 +45,44 @@ export async function GET(request: NextRequest) {
             is_active: true,
           })
 
-          if (insertError) {
-            console.error("Error creating profile:", insertError)
+          if (profileError) {
+            console.error("❌ Error creating profile:", profileError)
           } else {
-            console.log("Profile created successfully")
+            console.log("✅ Profile created successfully")
           }
-        } else if (!profileError) {
-          console.log("Profile already exists:", profile.username)
+        } else {
+          console.log("✅ Profile already exists")
         }
 
-        // 成功時はハッシュ処理ページにリダイレクト
-        const redirectUrl = new URL("/auth/hash-handler", request.url)
-        return NextResponse.redirect(redirectUrl)
-      } else {
-        console.error("Error exchanging code for session:", error)
+        // セッション情報をクッキーに設定してホームページにリダイレクト
+        const response = NextResponse.redirect(`${origin}${next}`)
+
+        // セッション情報をクッキーに保存（Supabaseが自動で行うが、明示的に設定）
+        if (data.session) {
+          response.cookies.set("sb-access-token", data.session.access_token, {
+            path: "/",
+            httpOnly: false,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: data.session.expires_in,
+          })
+
+          response.cookies.set("sb-refresh-token", data.session.refresh_token, {
+            path: "/",
+            httpOnly: false,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 30, // 30日
+          })
+        }
+
+        return response
       }
     } catch (error) {
-      console.error("Error in auth callback:", error)
+      console.error("❌ Unexpected error in auth callback:", error)
     }
   }
 
-  // エラーの場合はログインページにリダイレクト
-  return NextResponse.redirect(new URL("/login", request.url))
+  console.log("❌ No code provided or authentication failed")
+  return NextResponse.redirect(`${origin}/login?error=no_code`)
 }

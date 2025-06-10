@@ -2,7 +2,7 @@
 
 import { useState, useEffect, createContext, useContext, type ReactNode } from "react"
 import { supabase } from "@/lib/supabase"
-import type { User } from "@supabase/supabase-js"
+import type { User, Session } from "@supabase/supabase-js"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 
@@ -23,6 +23,7 @@ interface Profile {
 interface AuthContextType {
   user: User | null
   profile: Profile | null
+  session: Session | null
   isLoading: boolean
   isLoggedIn: boolean
   isPremium: boolean
@@ -37,22 +38,25 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const { toast } = useToast()
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
+      console.log("📋 Fetching profile for user:", userId)
       const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
       if (error) {
-        console.error("Error fetching profile:", error)
+        console.error("❌ Error fetching profile:", error)
         return null
       }
 
+      console.log("✅ Profile fetched:", data.username)
       return data as Profile
     } catch (error) {
-      console.error("Error fetching profile:", error)
+      console.error("❌ Unexpected error fetching profile:", error)
       return null
     }
   }
@@ -64,35 +68,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // URLのハッシュをクリーンアップする関数
+  const cleanupUrl = () => {
+    if (typeof window !== "undefined" && window.location.hash) {
+      console.log("🧹 Cleaning up URL hash")
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+    }
+  }
+
   useEffect(() => {
     let mounted = true
 
-    const initAuth = async () => {
-      if (!mounted) return
-
-      setIsLoading(true)
-
+    const initializeAuth = async () => {
       try {
+        console.log("🚀 Initializing authentication...")
+
         // 現在のセッションを取得
         const {
-          data: { session },
+          data: { session: currentSession },
+          error: sessionError,
         } = await supabase.auth.getSession()
 
-        console.log("Current session:", session ? "exists" : "none")
+        if (sessionError) {
+          console.error("❌ Error getting session:", sessionError)
+          setIsLoading(false)
+          return
+        }
 
-        if (!mounted) return
+        if (currentSession && mounted) {
+          console.log("✅ Session found:", currentSession.user.email)
+          setSession(currentSession)
+          setUser(currentSession.user)
 
-        setUser(session?.user ?? null)
-
-        if (session?.user) {
-          console.log("Loading profile for user:", session.user.email)
-          const profileData = await fetchProfile(session.user.id)
+          // プロフィールを取得
+          const profileData = await fetchProfile(currentSession.user.id)
           if (mounted) {
             setProfile(profileData)
           }
+
+          // URLをクリーンアップ
+          cleanupUrl()
+        } else {
+          console.log("ℹ️ No active session found")
         }
       } catch (error) {
-        console.error("Auth initialization error:", error)
+        console.error("❌ Error initializing auth:", error)
       } finally {
         if (mounted) {
           setIsLoading(false)
@@ -100,45 +120,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    initAuth()
+    initializeAuth()
 
     // 認証状態の変更を監視
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return
 
       console.log("🔄 Auth state changed:", event)
 
-      if (event === "SIGNED_OUT") {
-        console.log("User signed out")
-        setUser(null)
-        setProfile(null)
-        return
-      }
+      switch (event) {
+        case "SIGNED_IN":
+          if (newSession) {
+            console.log("✅ User signed in:", newSession.user.email)
+            setSession(newSession)
+            setUser(newSession.user)
 
-      if (event === "SIGNED_IN" && session?.user) {
-        console.log("✅ User signed in:", session.user.email)
-        setUser(session.user)
+            // プロフィールを取得
+            const profileData = await fetchProfile(newSession.user.id)
+            if (mounted) {
+              setProfile(profileData)
+            }
 
-        // プロフィールを取得
-        const profileData = await fetchProfile(session.user.id)
-        if (mounted) {
-          setProfile(profileData)
-        }
+            // ユーザー情報をコンソールに表示
+            console.log("👤 User Profile:", {
+              id: newSession.user.id,
+              email: newSession.user.email,
+              username: profileData?.username,
+              fullName: profileData?.full_name,
+              role: profileData?.role,
+            })
 
-        // ユーザー情報をコンソールに表示
-        console.log("👤 User Profile:", {
-          id: session.user.id,
-          email: session.user.email,
-          username: profileData?.username,
-          fullName: profileData?.full_name,
-          role: profileData?.role,
-        })
-      }
+            // URLをクリーンアップ
+            cleanupUrl()
 
-      if (event === "TOKEN_REFRESHED") {
-        console.log("🔄 Token refreshed")
+            toast({
+              title: "ログイン成功",
+              description: `${profileData?.username || "ユーザー"}さん、おかえりなさい！`,
+            })
+          }
+          break
+
+        case "SIGNED_OUT":
+          console.log("👋 User signed out")
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          cleanupUrl()
+          break
+
+        case "TOKEN_REFRESHED":
+          console.log("🔄 Token refreshed")
+          if (newSession) {
+            setSession(newSession)
+            setUser(newSession.user)
+          }
+          break
+
+        default:
+          console.log("ℹ️ Auth event:", event)
       }
     })
 
@@ -146,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [toast])
 
   const signOut = async () => {
     try {
@@ -156,7 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signOut()
 
       if (error) {
-        console.error("Sign out error:", error)
+        console.error("❌ Sign out error:", error)
         toast({
           title: "エラー",
           description: "ログアウトに失敗しました。",
@@ -164,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
       } else {
         console.log("✅ Signed out successfully")
+        setSession(null)
         setUser(null)
         setProfile(null)
 
@@ -172,11 +214,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           description: "ログアウトしました。",
         })
 
-        // ホームページにリダイレクト（ハッシュを避ける）
-        window.location.href = "/"
+        // ホームページにリダイレクト
+        router.push("/")
       }
     } catch (error) {
-      console.error("Sign out error:", error)
+      console.error("❌ Unexpected sign out error:", error)
       toast({
         title: "エラー",
         description: "ログアウトに失敗しました。",
@@ -187,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const isLoggedIn = !!user
+  const isLoggedIn = !!user && !!session
   const isPremium = profile?.role === "premium" || profile?.role === "admin"
   const isAdmin = profile?.role === "admin"
   const isDeveloper = false
@@ -197,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         profile,
+        session,
         isLoading,
         isLoggedIn,
         isPremium,

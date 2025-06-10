@@ -47,7 +47,7 @@ export function SiteHeader() {
   ]
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b bg-white/80 backdrop-blur-sm transition-all duration-300">
+    <header className="sticky top-0 z-40 w-full border-b bg-white shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center">
@@ -108,7 +108,7 @@ export function SiteHeader() {
                     </span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="bg-white">
                   <DropdownMenuItem onClick={() => router.push("/account")}>マイページ</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/account/favorites")}>お気に入り</DropdownMenuItem>
 
@@ -199,7 +199,9 @@ export function SiteHeader() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className={`md:hidden border-t ${isDeveloper ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white"}`}
+            className={`md:hidden border-t ${
+              isDeveloper ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-white"
+            }`}
           >
             <div className="container mx-auto px-4 py-3 space-y-3">
               <nav className="flex flex-col space-y-2">

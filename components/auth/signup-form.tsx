@@ -87,12 +87,20 @@ export function SignupForm() {
         throw signUpError
       }
 
-      toast({
-        title: "登録完了",
-        description: "確認メールを送信しました。メールをご確認ください。",
-      })
-
-      router.push("/auth/confirm")
+      if (data.user && !data.user.email_confirmed_at) {
+        toast({
+          title: "登録完了",
+          description: "確認メールを送信しました。メールをご確認ください。",
+        })
+        router.push("/auth/confirm")
+      } else if (data.user) {
+        // メール確認が不要な場合（開発環境など）
+        toast({
+          title: "登録完了",
+          description: "アカウントが作成されました。",
+        })
+        router.push("/")
+      }
     } catch (err: any) {
       console.error("登録エラー:", err)
       if (err.message === "User already registered") {
@@ -114,6 +122,10 @@ export function SignupForm() {
         provider: "google",
         options: {
           redirectTo: REDIRECT_URL,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
         },
       })
 

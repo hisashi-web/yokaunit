@@ -8,8 +8,24 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     try {
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
-      if (!error) {
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+      if (!error && data.user) {
+        // プロフィール情報を確認
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.user.id)
+          .single()
+
+        if (!profileError && profile) {
+          // プロフィールが存在し、必要な情報が揃っているかチェック
+          if (!profile.username || !profile.phone_number || !profile.birth_date) {
+            // 追加情報が必要な場合は追加情報入力ページにリダイレクト
+            return NextResponse.redirect(new URL("/auth/additional-info", request.url))
+          }
+        }
+
         // 成功時はホームページにリダイレクト
         return NextResponse.redirect(new URL(next, request.url))
       }

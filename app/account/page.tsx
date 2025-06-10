@@ -11,123 +11,43 @@ import { User, Settings, Heart, Crown, Clock } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
-
-interface Tool {
-  id: string
-  name: string
-  description: string
-  category: string
-  url: string
-  isNew?: boolean
-  isPremium?: boolean
-  isPrivate?: boolean
-  likes?: number
-}
-
-// ツールデータ（実際のアプリではAPIから取得）
-const allTools: Record<string, Tool> = {
-  pomodoro: {
-    id: "pomodoro",
-    name: "シンプルなポモドーロタイマー",
-    description: "集中作業と休憩を管理できるシンプルなタイマーツール。通知機能付き。",
-    category: "生産性",
-    url: "/tools/pomodoro",
-    isNew: true,
-    likes: 87,
-  },
-  "image-resize": {
-    id: "image-resize",
-    name: "画像リサイズツール",
-    description: "ドラッグ&ドロップで簡単に画像サイズを変更できます。複数形式に対応。",
-    category: "画像編集",
-    url: "/tools/image-resize",
-    isNew: false,
-    likes: 189,
-  },
-  password: {
-    id: "password",
-    name: "パスワード生成ツール",
-    description: "安全なパスワードを簡単に生成。強度チェック機能付き。",
-    category: "セキュリティ",
-    url: "/tools/password",
-    isNew: false,
-    likes: 245,
-  },
-  markdown: {
-    id: "markdown",
-    name: "マークダウンエディタ",
-    description: "リアルタイムプレビュー付きのシンプルなマークダウンエディタ。",
-    category: "テキスト",
-    url: "/tools/markdown",
-    isNew: false,
-    likes: 124,
-  },
-  "pdf-to-image": {
-    id: "pdf-to-image",
-    name: "PDFから画像への変換",
-    description: "PDFの各ページをJPG/PNG形式で保存できます。",
-    category: "ファイル変換",
-    url: "/tools/pdf-to-image",
-    isNew: false,
-    likes: 156,
-  },
-  "color-palette": {
-    id: "color-palette",
-    name: "カラーパレット生成",
-    description: "調和の取れたカラーパレットを自動生成。デザイン作業に役立ちます。",
-    category: "デザイン",
-    url: "/tools/color-palette",
-    isNew: false,
-    likes: 112,
-  },
-}
+import { useAuth } from "@/hooks/use-auth"
+import { getUserFavorites } from "@/lib/actions/favorites"
+import { getTools, type Tool } from "@/lib/actions/tools"
 
 export default function AccountPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [isPremium, setIsPremium] = useState(false)
-  const [username, setUsername] = useState("")
-  const [email, setEmail] = useState("")
-  const [favorites, setFavorites] = useState<string[]>([])
+  const [favoriteTools, setFavoriteTools] = useState<Tool[]>([])
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const { isLoggedIn, profile, isPremium } = useAuth()
 
   useEffect(() => {
     // ページ遷移時にトップにスクロール
     window.scrollTo(0, 0)
 
-    // ログイン状態の確認
-    const checkAuth = () => {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-      setIsLoggedIn(loggedIn)
-
-      if (loggedIn) {
-        const premium = localStorage.getItem("isPremium") === "true"
-        const name = localStorage.getItem("username") || ""
-        const userEmail = localStorage.getItem("email") || ""
-        const savedFavorites = localStorage.getItem("favorites")
-
-        setIsPremium(premium)
-        setUsername(name)
-        setEmail(userEmail)
-
-        if (savedFavorites) {
-          setFavorites(JSON.parse(savedFavorites))
-        }
-      } else {
-        // 未ログインの場合はログインページにリダイレクト
+    const fetchFavorites = async () => {
+      if (!isLoggedIn) {
         router.push("/login")
+        return
+      }
+
+      try {
+        setLoading(true)
+        const favoriteIds = await getUserFavorites()
+
+        if (favoriteIds.length > 0) {
+          const { tools } = await getTools({ slugs: favoriteIds, limit: 4 })
+          setFavoriteTools(tools)
+        }
+      } catch (error) {
+        console.error("Error fetching favorites:", error)
+      } finally {
+        setLoading(false)
       }
     }
 
-    checkAuth()
-    window.addEventListener("storage", checkAuth)
-
-    return () => {
-      window.removeEventListener("storage", checkAuth)
-    }
-  }, [router])
-
-  // お気に入りツールの取得
-  const favoriteTools = favorites.map((id) => allTools[id]).filter((tool): tool is Tool => tool !== undefined)
+    fetchFavorites()
+  }, [isLoggedIn, router])
 
   if (!isLoggedIn) {
     return (
@@ -163,8 +83,8 @@ export default function AccountPage() {
                       <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-3">
                         <User className="h-10 w-10 text-blue-600" />
                       </div>
-                      <CardTitle className="text-xl">{username}</CardTitle>
-                      <p className="text-sm text-gray-500">{email}</p>
+                      <CardTitle className="text-xl">{profile?.username || profile?.full_name || "ユーザー"}</CardTitle>
+                      <p className="text-sm text-gray-500">{profile?.email}</p>
                       {isPremium && (
                         <Badge className="mt-2 bg-yellow-100 text-yellow-800 flex items-center gap-1">
                           <Crown className="h-3 w-3" />
@@ -220,17 +140,23 @@ export default function AccountPage() {
                         <div className="space-y-4">
                           <h3 className="text-lg font-medium">お気に入りツール</h3>
 
-                          {favoriteTools.length > 0 ? (
+                          {loading ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {Array.from({ length: 4 }).map((_, i) => (
+                                <div key={i} className="h-32 bg-gray-200 animate-pulse rounded-lg"></div>
+                              ))}
+                            </div>
+                          ) : favoriteTools.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {favoriteTools.map((tool) => (
-                                <Link key={tool.id} href={tool.url} className="block">
+                                <Link key={tool.slug} href={tool.href} className="block">
                                   <Card className="h-full hover:shadow-md transition-shadow duration-200">
                                     <CardContent className="p-4">
                                       <div className="flex justify-between items-start mb-2">
-                                        <h4 className="font-medium">{tool.name}</h4>
+                                        <h4 className="font-medium">{tool.title}</h4>
                                         <div className="flex items-center text-sm text-gray-500">
                                           <Heart className="h-3.5 w-3.5 mr-1 fill-red-500 text-red-500" />
-                                          <span>{tool.likes || 0}</span>
+                                          <span>{tool.likes_count || 0}</span>
                                         </div>
                                       </div>
                                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">{tool.description}</p>
@@ -267,11 +193,23 @@ export default function AccountPage() {
                           <div className="space-y-4">
                             <div>
                               <h4 className="text-sm font-medium text-gray-500">ユーザー名</h4>
-                              <p>{username}</p>
+                              <p>{profile?.username || "未設定"}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-500">氏名</h4>
+                              <p>{profile?.full_name || "未設定"}</p>
                             </div>
                             <div>
                               <h4 className="text-sm font-medium text-gray-500">メールアドレス</h4>
-                              <p>{email}</p>
+                              <p>{profile?.email || "未設定"}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-500">電話番号</h4>
+                              <p>{profile?.phone_number || "未設定"}</p>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-500">生年月日</h4>
+                              <p>{profile?.birth_date || "未設定"}</p>
                             </div>
                             <div>
                               <h4 className="text-sm font-medium text-gray-500">会員ステータス</h4>

@@ -1,3 +1,4 @@
+
 import { ToolsShowcase } from "@/components/tools-showcase"
 import { HeroSection } from "@/components/hero-section"
 import { BackgroundAnimation } from "@/components/background-animation" // 新しいインポート

@@ -11,76 +11,37 @@ import { Heart, Trash2, Copy, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-
-interface Tool {
-  id: string
-  name: string
-  description: string
-  category: string
-  url: string
-}
-
-// ツールデータ（実際のアプリではAPIから取得）
-const allTools: Record<string, Tool> = {
-  pomodoro: {
-    id: "pomodoro",
-    name: "シンプルなポモドーロタイマー",
-    description: "集中作業と休憩を管理できるシンプルなタイマーツール。通知機能付き。",
-    category: "生産性",
-    url: "/tools/pomodoro",
-  },
-  "image-resize": {
-    id: "image-resize",
-    name: "画像リサイズツール",
-    description: "ドラッグ&ドロップで簡単に画像サイズを変更できます。複数形式に対応。",
-    category: "画像編集",
-    url: "/tools/image-resize",
-  },
-  password: {
-    id: "password",
-    name: "パスワード生成ツール",
-    description: "安全なパスワードを簡単に生成。強度チェック機能付き。",
-    category: "セキュリティ",
-    url: "/tools/password",
-  },
-  markdown: {
-    id: "markdown",
-    name: "マークダウンエディタ",
-    description: "リアルタイムプレビュー付きのシンプルなマークダウンエディタ。",
-    category: "テキスト",
-    url: "/tools/markdown",
-  },
-  "pdf-to-image": {
-    id: "pdf-to-image",
-    name: "PDFから画像への変換",
-    description: "PDFの各ページをJPG/PNG形式で保存できます。",
-    category: "ファイル変換",
-    url: "/tools/pdf-to-image",
-  },
-}
+import { useAuth } from "@/hooks/use-auth"
+import { getUserFavorites, toggleFavorite } from "@/lib/actions/favorites"
+import { getTools, type Tool } from "@/lib/actions/tools"
 
 export default function FavoritesPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [favoriteTools, setFavoriteTools] = useState<string[]>([])
+  const [favoriteTools, setFavoriteTools] = useState<Tool[]>([])
   const [savedPasswords, setSavedPasswords] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState("tools")
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
   const { toast } = useToast()
+  const { isLoggedIn } = useAuth()
 
   useEffect(() => {
     // ページ遷移時にトップにスクロール
     window.scrollTo(0, 0)
 
-    // ログイン状態とお気に入りの確認
-    const checkAuth = () => {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-      setIsLoggedIn(loggedIn)
+    const fetchData = async () => {
+      if (!isLoggedIn) {
+        router.push("/login")
+        return
+      }
 
-      if (loggedIn) {
+      try {
+        setLoading(true)
         // お気に入りツール
-        const favorites = localStorage.getItem("favorites")
-        if (favorites) {
-          setFavoriteTools(JSON.parse(favorites))
+        const favoriteIds = await getUserFavorites()
+
+        if (favoriteIds.length > 0) {
+          const { tools } = await getTools({ slugs: favoriteIds })
+          setFavoriteTools(tools)
         }
 
         // 保存したパスワード
@@ -88,30 +49,36 @@ export default function FavoritesPage() {
         if (passwords) {
           setSavedPasswords(JSON.parse(passwords))
         }
-      } else {
-        // 未ログインの場合はログインページにリダイレクト
-        router.push("/login")
+      } catch (error) {
+        console.error("Error fetching data:", error)
+      } finally {
+        setLoading(false)
       }
     }
 
-    checkAuth()
-    window.addEventListener("storage", checkAuth)
+    fetchData()
+  }, [isLoggedIn, router])
 
-    return () => {
-      window.removeEventListener("storage", checkAuth)
+  const removeFavoriteTool = async (toolSlug: string) => {
+    try {
+      const result = await toggleFavorite(toolSlug)
+
+      if (result.success) {
+        setFavoriteTools(favoriteTools.filter((tool) => tool.slug !== toolSlug))
+
+        toast({
+          title: "お気に入りから削除しました",
+          description: "ツールがお気に入りリストから削除されました",
+        })
+      }
+    } catch (error) {
+      console.error("Error removing favorite:", error)
+      toast({
+        title: "エラー",
+        description: "お気に入りの削除に失敗しました",
+        variant: "destructive",
+      })
     }
-  }, [router])
-
-  const removeFavoriteTool = (toolId: string) => {
-    const newFavorites = favoriteTools.filter((id) => id !== toolId)
-    setFavoriteTools(newFavorites)
-    localStorage.setItem("favorites", JSON.stringify(newFavorites))
-    window.dispatchEvent(new Event("storage"))
-
-    toast({
-      title: "お気に入りから削除しました",
-      description: "ツールがお気に入りリストから削除されました",
-    })
   }
 
   const removePassword = (index: number) => {
@@ -135,7 +102,7 @@ export default function FavoritesPage() {
     })
   }
 
-  if (!isLoggedIn) {
+  if (loading) {
     return (
       <div className="flex min-h-screen flex-col">
         <SiteHeader />
@@ -179,43 +146,38 @@ export default function FavoritesPage() {
               <TabsContent value="tools">
                 {favoriteTools.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {favoriteTools.map((toolId) => {
-                      const tool = allTools[toolId]
-                      if (!tool) return null
-
-                      return (
-                        <Card key={toolId} className="relative">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">{tool.name}</CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <p className="text-sm text-gray-600 mb-4">{tool.description}</p>
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
-                                {tool.category}
-                              </span>
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-500 hover:text-red-700"
-                                  onClick={() => removeFavoriteTool(toolId)}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-1" />
-                                  削除
+                    {favoriteTools.map((tool) => (
+                      <Card key={tool.slug} className="relative">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-lg">{tool.title}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 mb-4">{tool.description}</p>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">
+                              {tool.category}
+                            </span>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-500 hover:text-red-700"
+                                onClick={() => removeFavoriteTool(tool.slug)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                削除
+                              </Button>
+                              <Link href={tool.href} onClick={() => window.scrollTo(0, 0)}>
+                                <Button size="sm">
+                                  <ExternalLink className="h-4 w-4 mr-1" />
+                                  開く
                                 </Button>
-                                <Link href={tool.url} onClick={() => window.scrollTo(0, 0)}>
-                                  <Button size="sm">
-                                    <ExternalLink className="h-4 w-4 mr-1" />
-                                    開く
-                                  </Button>
-                                </Link>
-                              </div>
+                              </Link>
                             </div>
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-center py-12 bg-gray-50 rounded-lg">

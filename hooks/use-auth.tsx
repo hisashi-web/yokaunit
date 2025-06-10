@@ -44,22 +44,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast()
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
-    try {
-      console.log("📋 Fetching profile for user:", userId)
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+  try {
+    console.log("📋 Fetching profile for user:", userId)
 
-      if (error) {
-        console.error("❌ Error fetching profile:", error)
-        return null
-      }
+    const { data, error, status } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId) // ← 修正点
+      .single()
 
-      console.log("✅ Profile fetched:", data.username)
-      return data as Profile
-    } catch (error) {
-      console.error("❌ Unexpected error fetching profile:", error)
+    if (error || !data) {
+      console.error("❌ Error fetching profile:", { error, status, data })
       return null
     }
+
+    console.log("✅ Profile fetched:", data.username)
+    return data as Profile
+  } catch (error) {
+    console.error("❌ Unexpected error fetching profile:", error)
+    return null
   }
+}
+
 
   const refreshProfile = async () => {
     if (user) {

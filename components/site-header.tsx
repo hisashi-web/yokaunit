@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,60 +18,17 @@ import {
 import { useRouter, usePathname } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
 
 export function SiteHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [isPremium, setIsPremium] = useState(false)
-  const [isDeveloper, setIsDeveloper] = useState(false)
-  const [username, setUsername] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
-  useEffect(() => {
-    // クライアントサイドでのみ実行
-    const checkAuth = () => {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-      const premium = localStorage.getItem("isPremium") === "true"
-      const developer = localStorage.getItem("isDeveloper") === "true"
-      const name = localStorage.getItem("username") || ""
-
-      setIsLoggedIn(loggedIn)
-      setIsPremium(premium)
-      setIsDeveloper(developer)
-      setUsername(name)
-    }
-
-    checkAuth()
-
-    // パスが変わるたびに認証状態を確認
-    window.addEventListener("storage", checkAuth)
-
-    return () => {
-      window.removeEventListener("storage", checkAuth)
-    }
-  }, [pathname])
-
-  const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn")
-    localStorage.removeItem("isPremium")
-    localStorage.removeItem("hasPrivateAccess")
-    localStorage.removeItem("username")
-    localStorage.removeItem("email")
-    localStorage.removeItem("isDeveloper")
-
-    setIsLoggedIn(false)
-    setIsPremium(false)
-    setIsDeveloper(false)
-    setUsername("")
-
-    // ストレージイベントを発火して他のコンポーネントに通知
-    window.dispatchEvent(new Event("storage"))
-
-    router.push("/")
-  }
+  const { isLoggedIn, profile, isPremium, isAdmin, isDeveloper, signOut } = useAuth()
+  const username = profile?.username || profile?.full_name || "ユーザー"
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -155,12 +112,12 @@ export function SiteHeader() {
                   <DropdownMenuItem onClick={() => router.push("/account")}>マイページ</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/account/favorites")}>お気に入り</DropdownMenuItem>
 
-                  {isDeveloper && (
+                  {(isAdmin || isDeveloper) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => router.push("/admin/dashboard")}>
                         <LayoutDashboard className="h-4 w-4 mr-2 text-amber-600" />
-                        開発者ダッシュボード
+                        管理ダッシュボード
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => router.push("/admin/tools")}>
                         <Settings className="h-4 w-4 mr-2 text-amber-600" />
@@ -181,16 +138,21 @@ export function SiteHeader() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout}>
+                  <DropdownMenuItem onClick={() => signOut()}>
                     <LogOut className="h-4 w-4 mr-2" />
                     ログアウト
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button size="sm" className="hidden md:flex" onClick={() => router.push("/login")}>
-                ログイン
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="hidden md:flex" onClick={() => router.push("/signup")}>
+                  新規登録
+                </Button>
+                <Button size="sm" className="hidden md:flex" onClick={() => router.push("/login")}>
+                  ログイン
+                </Button>
+              </div>
             )}
 
             {/* モバイルメニューボタン */}
@@ -306,7 +268,7 @@ export function SiteHeader() {
                       お気に入り
                     </Link>
 
-                    {isDeveloper && (
+                    {(isAdmin || isDeveloper) && (
                       <>
                         <Link
                           href="/admin/dashboard"
@@ -314,7 +276,7 @@ export function SiteHeader() {
                           onClick={() => setIsMenuOpen(false)}
                         >
                           <LayoutDashboard className="h-3.5 w-3.5 mr-1.5 text-amber-600" />
-                          開発者ダッシュボード
+                          管理ダッシュボード
                         </Link>
                         <Link
                           href="/admin/tools"
@@ -349,7 +311,7 @@ export function SiteHeader() {
                     <button
                       className="text-left text-red-600 hover:text-red-700 transition-colors py-1.5 text-sm flex items-center"
                       onClick={() => {
-                        handleLogout()
+                        signOut()
                         setIsMenuOpen(false)
                       }}
                     >
@@ -358,7 +320,17 @@ export function SiteHeader() {
                     </button>
                   </>
                 ) : (
-                  <div className="pt-2 border-t border-gray-100">
+                  <div className="pt-2 border-t border-gray-100 space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        router.push("/signup")
+                        setIsMenuOpen(false)
+                      }}
+                    >
+                      新規登録
+                    </Button>
                     <Button
                       className="w-full"
                       onClick={() => {
@@ -366,7 +338,7 @@ export function SiteHeader() {
                         setIsMenuOpen(false)
                       }}
                     >
-                      ログイン / 新規登録
+                      ログイン
                     </Button>
                   </div>
                 )}

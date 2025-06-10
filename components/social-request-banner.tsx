@@ -15,14 +15,14 @@ export function SocialRequestBanner() {
       <Card className="bg-gradient-to-r from-blue-50 to-white border-blue-100">
         <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-center sm:text-left">
-            <h3 className="font-medium text-gray-900 mb-1">新しいツールの要望はありますか？</h3>
+            <h3 className="font-medium text-gray-900 mb-1">新しいツールのアイデアはありますか？</h3>
             <p className="text-sm text-gray-600">
-              YokaUnitはあなたのひらめきを本気でカタチにします。SNSで気軽にどうぞ。(作成費無料)
+              SNSで気軽にリクエストしてください。あなたのアイデアが無料で次のツールになるかも！
             </p>
           </div>
           <div className="flex gap-3">
             <a
-              href="https://www.instagram.com/hisashi_web?igsh=MWxlaDdlcGg1YXk5cA%3D%3D&utm_source=qr"
+              href="https://instagram.com/yokaunit"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition-opacity"
@@ -31,7 +31,7 @@ export function SocialRequestBanner() {
               <span>Instagram</span>
             </a>
             <a
-              href="https://threads.net/https://www.threads.com/@hisashi_web?igshid=NTc4MTIwNjQ2YQ=="
+              href="https://threads.net/yokaunit"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 bg-black text-white px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition-opacity"

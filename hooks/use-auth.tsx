@@ -3,6 +3,7 @@
 import { useState, useEffect, createContext, useContext, type ReactNode } from "react"
 import { supabase } from "@/lib/supabase"
 import type { User } from "@supabase/supabase-js"
+import { useRouter } from "next/navigation"
 
 interface Profile {
   id: string
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const router = useRouter()
 
   const fetchProfile = async (userId: string): Promise<Profile | null> => {
     try {
@@ -100,6 +102,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
+      if (event === "SIGNED_OUT") {
+        setUser(null)
+        setProfile(null)
+        // ログアウト時にホームページにリダイレクト
+        router.push("/")
+        return
+      }
+
       setUser(session?.user ?? null)
 
       if (session?.user) {
@@ -118,15 +128,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [])
+  }, [router])
 
   const signOut = async () => {
     try {
-      await supabase.auth.signOut()
+      setIsLoading(true)
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error("Sign out error:", error)
+      }
+
+      // 強制的にステートをクリア
       setUser(null)
       setProfile(null)
+
+      // ホームページにリダイレクト
+      window.location.href = "/"
     } catch (error) {
       console.error("Sign out error:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 

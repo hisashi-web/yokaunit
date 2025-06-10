@@ -11,23 +11,33 @@ export async function GET(request: NextRequest) {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
       if (!error && data.user) {
-        // プロフィール情報を確認
+        // プロフィール情報を確認・作成
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("*")
           .eq("id", data.user.id)
           .single()
 
-        if (!profileError && profile) {
-          // プロフィールが存在し、必要な情報が揃っているかチェック
-          if (!profile.username || !profile.phone_number || !profile.birth_date) {
-            // 追加情報が必要な場合は追加情報入力ページにリダイレクト
-            return NextResponse.redirect(new URL("/auth/additional-info", request.url))
+        if (profileError && profileError.code === "PGRST116") {
+          // プロフィールが存在しない場合は作成
+          const { error: insertError } = await supabase.from("profiles").insert({
+            id: data.user.id,
+            email: data.user.email,
+            username: data.user.user_metadata?.full_name || data.user.email?.split("@")[0] || "ユーザー",
+            full_name: data.user.user_metadata?.full_name || null,
+            avatar_url: data.user.user_metadata?.avatar_url || null,
+            role: "basic",
+            is_active: true,
+          })
+
+          if (insertError) {
+            console.error("Error creating profile:", insertError)
           }
         }
 
-        // 成功時はホームページにリダイレクト
-        return NextResponse.redirect(new URL(next, request.url))
+        // 成功時はホームページにリダイレクト（ハッシュを避ける）
+        const redirectUrl = new URL("/", request.url)
+        return NextResponse.redirect(redirectUrl)
       }
     } catch (error) {
       console.error("Error exchanging code for session:", error)

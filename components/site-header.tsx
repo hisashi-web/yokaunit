@@ -28,7 +28,7 @@ export function SiteHeader() {
   const pathname = usePathname()
 
   const { isLoggedIn, profile, isPremium, isAdmin, isDeveloper, signOut } = useAuth()
-  const username = profile?.username || profile?.full_name || "ユーザー"
+  const username = profile?.username || "ユーザー"
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,6 +36,11 @@ export function SiteHeader() {
       router.push(`/tools?search=${encodeURIComponent(searchQuery)}`)
       setIsSearchOpen(false)
     }
+  }
+
+  const handleSignOut = async () => {
+    await signOut()
+    setIsMenuOpen(false)
   }
 
   const navigationItems = [
@@ -111,6 +116,7 @@ export function SiteHeader() {
                 <DropdownMenuContent align="end" className="bg-white">
                   <DropdownMenuItem onClick={() => router.push("/account")}>マイページ</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push("/account/favorites")}>お気に入り</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push("/account/settings")}>設定</DropdownMenuItem>
 
                   {(isAdmin || isDeveloper) && (
                     <>
@@ -138,7 +144,7 @@ export function SiteHeader() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => signOut()}>
+                  <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="h-4 w-4 mr-2" />
                     ログアウト
                   </DropdownMenuItem>
@@ -269,6 +275,13 @@ export function SiteHeader() {
                     >
                       お気に入り
                     </Link>
+                    <Link
+                      href="/account/settings"
+                      className="text-gray-700 hover:text-blue-600 transition-colors py-1.5 text-sm"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      設定
+                    </Link>
 
                     {(isAdmin || isDeveloper) && (
                       <>
@@ -312,10 +325,7 @@ export function SiteHeader() {
                     )}
                     <button
                       className="text-left text-red-600 hover:text-red-700 transition-colors py-1.5 text-sm flex items-center"
-                      onClick={() => {
-                        signOut()
-                        setIsMenuOpen(false)
-                      }}
+                      onClick={handleSignOut}
                     >
                       <LogOut className="h-3.5 w-3.5 mr-1.5" />
                       ログアウト
